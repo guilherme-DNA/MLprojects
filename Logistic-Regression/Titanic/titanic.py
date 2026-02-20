@@ -1,17 +1,23 @@
+import time
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import time
+
 
 # Carregar o arquivo CSV em um DataFrame pandas
-df = pd.read_csv('train.csv')
+df = pd.read_csv('data/train.csv')
 media_idade = df['Age'].mean()
 
 # Preencher os valores ausentes na coluna 'Age' com a média da idade
 df['Age'] = df['Age'].fillna(media_idade)
-# Converter o DataFrame em um array numpy
-data = df.to_numpy()
-data = data[:,1:] # Removendo o ID do passageiro (pq nn tem nenhuma relação pra se sobreviveu ou nn)
+
+#removendo coluna inutil
+df = df.drop("PassengerId",axis=1)
+
+#pegando coluna target
+target = df["Survived"]
+target = target.to_numpy()
+
 
 #queremos classificar dados de entrada em 2 grupos, resultado discreto (sim/nao , vive/morre , etc)
 
@@ -19,41 +25,57 @@ data = data[:,1:] # Removendo o ID do passageiro (pq nn tem nenhuma relação pr
 
 #funcao de custo (aproximador dos pesos) = cross-entropy loss
 
+
+#Escolhe aqui as variaveis a serem usadas pro modelo
 variaveis=['Pclass','Sex','Age','SibSp','Parch','Fare']
+df = df[variaveis]
 
-ref_data={'survive':0,'Pclass':1,'Sex':3 , 'Age':4 , 'SibSp':5 , 'Parch':6 , 'Fare':8 }  #referencial pra cada Variavel
 
 
-mapeamento = {'male': 0, 'female': 1}
-data[:, ref_data['Sex']] = np.array([mapeamento[val] for val in data[:, ref_data['Sex']]]) #trocando male e female pra [0,1]
 
-beta0=2  #intercepto (valor base q entra no calculo de z)
+# Converter o DataFrame em um array numpy
+data = df.to_numpy()
 
-pesos=np.ones(9) #pesos a serem estimados
+
+#mapeando genero (male,female) pra (0,1)
+if 'Sex' in variaveis:
+    data[: , 1] = [1 if (data[i , 1] == 'male') else 0 for i in range (len(data[: ,1]))]
+
+
+
+beta0= 2  #intercepto (valor base q entra no calculo de z)
+
+
+#pesos do modelo
+pesos=np.ones(len(variaveis)) 
+
 
 N=len(data[:,0])
 
-taxa_aprendizado = 0.002    #taxa de passo dos pesos
 
-precisao=0.1           #valor minimo de um passo para encerrar o treinamento
+#taxa de passo dos pesos
+taxa_aprendizado = 0.002    
+
+
+#valor minimo de um passo para encerrar o treinamento
+precisao=0.1
 
 
 def sigmoide(z):
     return 1 / (1 + np.exp(-z))
-
-#print([data[i, ref_data['Pclass']] for i in range(5)])
 
 
 def error(pesos):
     res = np.zeros_like(pesos)
     for i in range(N):
         z = beta0
-        for var in variaveis:
-            z += pesos[ref_data[var]] * data[i, ref_data[var]]
+        for j in range (len(variaveis)):
+            z += pesos[j] * data[i, j]
         y_chapeu = sigmoide(z)
-        erro = -1 / N * (data[i, ref_data['survive']] - y_chapeu)
-        for var in variaveis:
-            res[ref_data[var]] += erro * data[i, ref_data[var]]
+        erro = -1 / N * (target[i] - y_chapeu)
+
+        for j in range (len(variaveis)):
+            res[j] += erro * data[i, j]
     return res
 
 
@@ -79,7 +101,7 @@ fim = time.time()
 tempo_execucao = fim - inicio
 
 
-
+'''
 #-----------------------------------------------------------------------plotando --------------------------------------------------------------------------
 
 for var in variaveis:
@@ -97,39 +119,42 @@ for var in variaveis:
 
 
 #------------------------------------------------------testando dados apos treinamento --------------------------------------------------------------------
+'''
 
+# -------------------- TESTE --------------------
 
-df_novos_dados = pd.read_csv('test.csv')
+df_novos_dados = pd.read_csv('data/test.csv')
+
+# salvar PassengerId antes de remover colunas
+passenger_ids = df_novos_dados["PassengerId"]
+
+# tratar idade
 media_idade = df_novos_dados['Age'].mean()
 df_novos_dados['Age'] = df_novos_dados['Age'].fillna(media_idade)
-mapeamento = {'male': 0, 'female': 1}
+
+# mapear sexo
+mapeamento = {'male': 1, 'female': 0}
 df_novos_dados['Sex'] = df_novos_dados['Sex'].map(mapeamento)
 
+# manter apenas as variáveis usadas no treino
+df_novos_dados = df_novos_dados[variaveis]
 
-def prever_sobrevivencia(dados, indice):
-    z = beta0
-    for var in variaveis:
-        z += pesos[ref_data[var]] * dados[var][indice]
-    y_hat = sigmoide(z)
-    if y_hat > 0.5:
-        return 1
-    else:
-        return 0
+# converter para numpy e garantir float
+X_test = df_novos_dados.to_numpy().astype(float)
 
+# calcular predições (vetorizado)
+z = beta0 + np.dot(X_test, pesos)
+y_hat = sigmoide(z)
 
-previsoes = []
+previsoes = (y_hat > 0.5).astype(int)
 
+# criar dataframe final
+df_resultado = pd.DataFrame({
+    "PassengerId": passenger_ids,
+    "Survived": previsoes
+})
 
-# Loop para prever dados de teste
-for i in range(len(df_novos_dados)):
-    sobreviveu = prever_sobrevivencia(df_novos_dados, i)
-    previsoes.append(sobreviveu)
-
-
-# Adicionar as previsões ao DataFrame
-df_novos_dados['Survived'] = previsoes
-# Criar DataFrame com apenas as colunas de ID do passageiro e sobrevivência prevista
-df_resultado = df_novos_dados[['PassengerId', 'Survived']]
-# Salvar os resultados em um novo arquivo CSV
+# salvar csv
 df_resultado.to_csv('resultado_previsto3.csv', index=False)
+
 print("Tempo de execução:", tempo_execucao, "segundos")
